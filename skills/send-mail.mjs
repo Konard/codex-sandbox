@@ -32,10 +32,22 @@ export async function sendMail(accountPath, toArg, subjectArg, textArg) {
   await fsExtra.ensureDir(defaultDir);
 
   const nodemailer = await use('nodemailer@6');
+
+  /*
+   * Mail.tm SMTP details
+   * --------------------
+   * DNS MX for all Mail.tm domains points at `in.mail.tm`.
+   * The server listens on port 25, announces STARTTLS and presents a valid
+   * certificate.  Submission (587) and implicit‑TLS (465) ports are **not**
+   * reachable; therefore we keep using port 25 but enforce an encrypted
+   * channel via STARTTLS by setting `requireTLS: true`.
+   */
+
   const transporter = nodemailer.createTransport({
     host: 'in.mail.tm',
     port: 25,
-    secure: false,
+    secure: false,       // plain connection first …
+    requireTLS: true,    // … then MUST upgrade with STARTTLS
     auth: { user: address, pass: password }
   });
 
