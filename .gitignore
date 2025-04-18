@@ -1,3 +1,4 @@
 # ignore search results directory
 search-bing/
+download/
 .env
