@@ -48,8 +48,8 @@ console.log(`✉️ Sending message to ${toAddress} via SMTP...`);
 const nodemailer = await use('nodemailer@6');
 // Create SMTP transporter (mail.tm SMTP)
 const transporter = nodemailer.createTransport({
-  host: 'smtp.mail.tm',
-  port: 587,
+  host: 'in.mail.tm',
+  port: 25,
   secure: false,
   auth: { user: address, pass: password }
 });

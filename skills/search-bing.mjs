@@ -24,6 +24,9 @@ if (!outputPathArg) {
 // Dynamically load use-m to import npm packages at runtime
 const useJs = await (await fetch('https://unpkg.com/use-m/use.js')).text();
 const { use } = eval(useJs);
+// Load node-fetch for HTTP requests via use-m
+const fetchMod = await use('node-fetch@3');
+const fetchFn = fetchMod.default || fetchMod;
 
 // Dynamically load Cheerio to parse HTML
 const cheerio = await use('cheerio@1.0.0-rc.12');
@@ -32,7 +35,7 @@ const { load } = cheerio;
 const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}`;
 let html;
 try {
-  const res = await fetch(bingUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64)' } });
+  const res = await fetchFn(bingUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64)' } });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   html = await res.text();
 } catch (err) {
