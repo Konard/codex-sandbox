@@ -1,42 +1,61 @@
 #!/usr/bin/env node
-// skills/register-email.mjs: find email providers via search-bing script
+// skills/register-email.mjs: register a new disposable email via mail.tm API
 
-// Parse command-line arguments
-const args = process.argv.slice(2);
-// Default query if none provided
-const query = args.length > 0
-  ? args.join(' ')
-  : 'email providers direct mail server access code register no phone number no credit card';
-
-// Slugify query for filename
-const slug = query.trim()
-  .replace(/[^a-zA-Z0-9]+/g, '-')
-  .replace(/^-+|-+$/g, '');
-// Default output folder and file
+// Default output directory
 const defaultDir = 'register-email';
-const outputFile = `${defaultDir}/${slug}.md`;
+// Slug for output filename based on timestamp
+const timestamp = Date.now();
 
-// Ensure output directory exists
-import fs from 'fs/promises';
-await fs.mkdir(defaultDir, { recursive: true });
-
-// Dynamically load use-m (for consistency, even if not directly used here)
+// Dynamically load use-m to import required modules
 const useJs = await (await fetch('https://unpkg.com/use-m/use.js')).text();
 const { use } = eval(useJs);
 
-console.log(`🔎 Searching for email providers: ${query}`);
-// Invoke search-bing.mjs to perform the search
-import { spawnSync } from 'child_process';
-const result = spawnSync(
-  'node',
-  ['skills/search-bing.mjs', query, outputFile],
-  { stdio: 'inherit' }
-);
-if (result.error) {
-  console.error(`❌ Search command failed: ${result.error.message}`);
+// Load node-fetch for HTTP and fs-extra for file operations
+const fetchMod = await use('node-fetch@3');
+const fetchFn = fetchMod.default || fetchMod;
+const fsExtra = await use('fs-extra@11');
+// Ensure output directory exists
+await fsExtra.ensureDir(defaultDir);
+
+// Generate credentials
+const username = `user${timestamp}`;
+const password = Math.random().toString(36).slice(2) + 'A!1';
+
+console.log('🔎 Fetching available domains...');
+// Get first available domain from mail.tm
+const domRes = await fetchFn('https://api.mail.tm/domains?page=1');
+if (!domRes.ok) {
+  console.error('❌ Failed to fetch domains');
   process.exit(1);
 }
-if (result.status !== 0) {
-  process.exit(result.status);
+const domData = await domRes.json();
+const domain = domData['hydra:member'][0]?.domain;
+if (!domain) {
+  console.error('❌ No domain available');
+  process.exit(1);
 }
-console.log(`✅ Search results saved to ${outputFile}`);
+const address = `${username}@${domain}`;
+
+console.log(`✉️ Registering account ${address} ...`);
+// Register account
+const accRes = await fetchFn('https://api.mail.tm/accounts', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ address, password })
+});
+if (!accRes.ok) {
+  const err = await accRes.text();
+  console.error(`❌ Registration failed: ${err}`);
+  process.exit(1);
+}
+const accData = await accRes.json();
+
+// Save account info (no token retrieval)
+const outputFile = `${defaultDir}/${username}.json`;
+// Use outputFile to write JSON string and ensure directory exists
+await fsExtra.outputFile(
+  outputFile,
+  JSON.stringify({ address, password, id: accData.id }, null, 2),
+  'utf8'
+);
+console.log(`✅ Registered ${address} → ${outputFile}`);
