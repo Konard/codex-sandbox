@@ -1,0 +1,3 @@
+# ignore search results directory
+search-bing/
+.env
