@@ -3,4 +3,5 @@ search-bing/
 download/
 register-email/
 check-mail/
+send-mail/
 .env
