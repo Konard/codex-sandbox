@@ -30,6 +30,21 @@ tape('search-bing basic functionality', async t => {
   const content = await fs.readFile(outPath, 'utf8');
   t.match(content, new RegExp(`^# Search results for "${query}"`), 'file contains correct header');
 
+  // ---------------------------------------------------------------
+  // Programmatic usage via dynamic import (await import)
+  // ---------------------------------------------------------------
+  const { searchBing } = await import('../skills/search-bing.mjs');
+  t.equal(typeof searchBing, 'function', 'searchBing exported as a function');
+
+  // Remove existing file to ensure fresh run
+  await fsExtra.remove(outPath);
+
+  const { results, outputFile } = await searchBing(query);
+  t.equal(outputFile, outPath, 'function returns default output path');
+  t.ok(Array.isArray(results), 'results is an array');
+  t.ok(results.length > 0, 'received at least one result');
+  t.ok(await fsExtra.pathExists(outPath), 'output file exists after function call');
+
   t.end();
 });
 

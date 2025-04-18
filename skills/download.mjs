@@ -1,52 +1,69 @@
 #!/usr/bin/env node
-// skills/download.mjs: download a URL to a file with slugified filename and use-m
-// No direct fs import; fs-extra will handle directory creation
+/*
+ * skills/download.mjs
+ * -------------------
+ * Download a remote file.  Exported as `download(url, [outPath])` so other code
+ * can import and reuse the functionality while still supporting CLI usage.
+ */
 
-// Parse command-line arguments
-const args = process.argv.slice(2);
-if (args.length < 1) {
-  console.error('Usage: download.mjs <URL> [outputFile]');
-  process.exit(1);
-}
-const [url, outputPathArg] = args;
-// Default output directory based on script name
-const defaultDir = 'download';
-// Slugify URL: replace non-alphanumerics with hyphens
-const slug = url.trim().replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-// Determine output file path: custom or defaultDir/slug
-const outputFile = outputPathArg || `${defaultDir}/${slug}`;
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-// Dynamically load use-m to import npm modules at runtime
-const useJs = await (await fetch('https://unpkg.com/use-m/use.js')).text();
-const { use } = eval(useJs);
+/**
+ * Download `url` and write it to `outPath` (or `download/<slug>` when omitted).
+ *
+ * @param {string} url
+ * @param {string | undefined} outPath
+ * @returns {Promise<string>}  The final output path.
+ */
+export async function download(url, outPath) {
+  if (!url || typeof url !== 'string') {
+    throw new TypeError('url must be a non‑empty string');
+  }
 
-// Load node-fetch for HTTP and fs-extra for file write conveniences
-const fetchMod = await use('node-fetch@3');
-const fetchFn = fetchMod.default || fetchMod;
-const fsExtra = await use('fs-extra@11');
+  const defaultDir = 'download';
+  const slug = url.trim().replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  const outputFile = outPath || `${defaultDir}/${slug}`;
 
-// Download the URL
-let response;
-try {
-  response = await fetchFn(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-} catch (err) {
-  console.error(`❌ Download failed: ${err.message}`);
-  process.exit(1);
-}
-if (!response.ok) {
-  console.error(`❌ HTTP Error: ${response.status}`);
-  process.exit(1);
-}
+  // Dynamically load required deps
+  const useJs = await (await fetch('https://unpkg.com/use-m/use.js')).text();
+  const { use } = eval(useJs);
 
-// Read response as Buffer
-const arrayBuffer = await response.arrayBuffer();
-const buffer = Buffer.from(arrayBuffer);
+  const fetchMod = await use('node-fetch@3');
+  const fetchFn = fetchMod.default || fetchMod;
+  const fsExtra = await use('fs-extra@11');
 
-// Write the file (fs-extra.outputFile creates directories as needed)
-try {
+  // Download
+  const response = await fetchFn(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
+
   await fsExtra.outputFile(outputFile, buffer);
-  console.log(`✅ Saved ${url} → ${outputFile}`);
-} catch (err) {
-  console.error(`❌ Failed to write file: ${err.message}`);
-  process.exit(1);
+  return outputFile;
+}
+
+// CLI runner
+const isCLI = (() => {
+  if (!process.argv[1]) return false;
+  return path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+})();
+
+if (isCLI) {
+  (async () => {
+    const args = process.argv.slice(2);
+    if (args.length < 1) {
+      console.error('Usage: download.mjs <URL> [outputFile]');
+      process.exit(1);
+    }
+    const [url, outPath] = args;
+    try {
+      const out = await download(url, outPath);
+      console.log(`✅ Saved ${url} → ${out}`);
+    } catch (err) {
+      console.error(`❌ ${err.message}`);
+      process.exit(1);
+    }
+  })();
 }

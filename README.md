@@ -1,7 +1,13 @@
 <!-- README for Codex Sandbox -->
 # Codex Sandbox
 
-> A toolkit of standalone Node.js scripts (“skills”) that dynamically load their own dependencies via **use-m**, requiring no local `package.json` or `node_modules`. Each script lives under `skills/` and writes output to its own default folder (which is git‑ignored).
+> A toolkit of **dual‑use Node.js scripts** (“skills”) – each file is **both**
+> 1️⃣ a stand‑alone CLI tool **and** 2️⃣ an importable async **function**.  All
+> dependencies are fetched on‑the‑fly with **use‑m**, so the repo stays totally
+> dependency‑free (no `package.json`, no `node_modules`).
+
+Every script lives under `skills/` and writes its artefacts to its own (git‑
+ignored) output folder.
 
 ## Repository Layout
 
@@ -28,7 +34,32 @@
 ## Scripts & Conventions
 
 ### ES Module + Top‑Level Await
-All scripts use `.mjs` modules and top‑level `await`, so no wrapper functions are needed.
+All skills use `.mjs` ES modules with top‑level `await`.
+
+### Dual‑Use Pattern (CLI + API)
+
+Each file exports **one async function** that performs the work.  At the bottom
+of the file we detect `isCLI`:
+
+```js
+export async function searchBing(q) { /* ... */ }
+
+if (isCLI) {
+  // executed via:  node skills/search-bing.mjs "openai"
+  (async () => { await searchBing(cliQuery); })();
+}
+```
+
+• **From the terminal**: nothing changed – run the script directly.
+
+• **From code**:
+
+```js
+const { searchBing } = await import('./skills/search-bing.mjs');
+const { results, outputFile } = await searchBing('openai codex');
+```
+
+This makes the skills easy to compose without spawning child processes.
 
 ### Dynamic Dependency Loading
 Each script begins by fetching and evaluating **use-m**:
@@ -50,6 +81,8 @@ These folders are ignored by git via `.gitignore`.
 
 ## Skill: download.mjs
 
+Function export: `download(url, [outputFile])`
+
 - **Usage**: `skills/download.mjs <URL> [outputFile]`
 - **Defaults**:
   - Output directory: `download/`
@@ -64,7 +97,15 @@ skills/download.mjs https://example.com
 # → download/https-example-com
 ```
 
+Programmatic:
+```js
+import { download } from './skills/download.mjs';
+await download('https://example.com');
+```
+
 ## Skill: search-bing.mjs
+
+- Function export: `searchBing(query, [outputFile])`
 
 - **Usage**: `skills/search-bing.mjs <query> [outputFile]`
 - **Defaults**:
@@ -80,7 +121,15 @@ skills/search-bing.mjs "openai codex"
 # → search-bing/openai-codex.md
 ```
 
+Programmatic:
+```js
+import { searchBing } from './skills/search-bing.mjs';
+const { results } = await searchBing('openai codex');
+```
+
 ## Skill: register-email.mjs
+
+Function export: `registerEmail()`
 
 - **Usage**: `skills/register-email.mjs`
 - **Defaults**:
@@ -94,8 +143,14 @@ skills/search-bing.mjs "openai codex"
   2. Registers a new account with a random username and password.
   3. Saves `{ address, password, id }` to `<username>.json`.
 
-## Skill: send-mail.mjs
+Programmatic:
+```js
+import { registerEmail } from './skills/register-email.mjs';
+const { address } = await registerEmail();
+```
 
+## Skill: send-mail.mjs
+- Function export: `sendMail(accountJson, [to], [subject], [text])`
 - **Usage**: `skills/send-mail.mjs <accountJson> [toAddress] [subject] [text]`
 - **Defaults**:
   - `toAddress`: same as account address if omitted
@@ -111,7 +166,15 @@ skills/search-bing.mjs "openai codex"
   - Sends email via Mail.tm’s SMTP.
   - Saves the send response `info` to a JSON file.
 
+Programmatic:
+```js
+import { sendMail } from './skills/send-mail.mjs';
+await sendMail('./register-email/user123.json');
+```
+
 ## Skill: check-mail.mjs
+
+- Function export: `checkMail(accountJson, [outputFile])`
 
 - **Usage**: `skills/check-mail.mjs <accountJson> [outputFile]`
 - **Defaults**:
@@ -126,16 +189,22 @@ skills/search-bing.mjs "openai codex"
   3. Fetches the list of messages.
   4. Saves `{ address, messages }` to the output JSON.
 
+Programmatic:
+```js
+import { checkMail } from './skills/check-mail.mjs';
+const { messages } = await checkMail('./register-email/user123.json');
+```
+
 ## Tests
 
 - `tests/search-bing.mjs` — unit test for search-bing skill
 - `tests/send-mail.mjs` — end-to-end integration test: register → send → check
 
-Run all tests with:
+Run integration test (longer, interacts with mail.tm):
 ```bash
 node tests/send-mail.mjs
 ```
-Or run a single test:
+Quick test (no network‑email, only Bing scrape):
 ```bash
 node tests/search-bing.mjs
 ```
