@@ -1,68 +1,52 @@
 #!/usr/bin/env node
+// skills/download.mjs: download a URL to a file with slugified filename and use-m
+// No direct fs import; fs-extra will handle directory creation
 
-const fs = require('fs');
-const http = require('http');
-const https = require('https');
-const { URL } = require('url');
+// Parse command-line arguments
+const args = process.argv.slice(2);
+if (args.length < 1) {
+  console.error('Usage: download.mjs <URL> [outputFile]');
+  process.exit(1);
+}
+const [url, outputPathArg] = args;
+// Default output directory based on script name
+const defaultDir = 'download';
+// Slugify URL: replace non-alphanumerics with hyphens
+const slug = url.trim().replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+// Determine output file path: custom or defaultDir/slug
+const outputFile = outputPathArg || `${defaultDir}/${slug}`;
 
-// Retrieve command-line arguments: URL and optional output file path
-const [,, urlString, outputPath = 'output.html'] = process.argv;
+// Dynamically load use-m to import npm modules at runtime
+const useJs = await (await fetch('https://unpkg.com/use-m/use.js')).text();
+const { use } = eval(useJs);
 
-if (!urlString) {
-  console.error('Usage: node download.js <URL> [outputFile]');
+// Load node-fetch for HTTP and fs-extra for file write conveniences
+const fetchMod = await use('node-fetch@3');
+const fetchFn = fetchMod.default || fetchMod;
+const fsExtra = await use('fs-extra@11');
+
+// Download the URL
+let response;
+try {
+  response = await fetchFn(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+} catch (err) {
+  console.error(`❌ Download failed: ${err.message}`);
+  process.exit(1);
+}
+if (!response.ok) {
+  console.error(`❌ HTTP Error: ${response.status}`);
   process.exit(1);
 }
 
-const maxRedirects = 5;
+// Read response as Buffer
+const arrayBuffer = await response.arrayBuffer();
+const buffer = Buffer.from(arrayBuffer);
 
-/**
- * Fetches the given URL and saves its response body to the destination file.
- * Follows up to `redirectsLeft` HTTP redirects.
- */
-function fetchToFile(urlStr, destPath, redirectsLeft) {
-  let urlObj;
-  try {
-    urlObj = new URL(urlStr);
-  } catch (err) {
-    return Promise.reject(new Error(`Invalid URL: ${urlStr}`));
-  }
-
-  const lib = urlObj.protocol === 'https:' ? https : http;
-  return new Promise((resolve, reject) => {
-    const req = lib.get(urlObj, (res) => {
-      // Handle HTTP redirects
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        if (redirectsLeft > 0) {
-          return resolve(fetchToFile(res.headers.location, destPath, redirectsLeft - 1));
-        } else {
-          return reject(new Error('Too many redirects'));
-        }
-      }
-
-      // Ensure a successful response
-      if (res.statusCode !== 200) {
-        res.resume();
-        return reject(new Error(`Request Failed. Status Code: ${res.statusCode}`));
-      }
-
-      // Pipe the response body to the file
-      const fileStream = fs.createWriteStream(destPath);
-      res.pipe(fileStream);
-      fileStream.on('finish', () => {
-        fileStream.close();
-        resolve();
-      });
-      fileStream.on('error', reject);
-    });
-
-    req.on('error', reject);
-  });
+// Write the file (fs-extra.outputFile creates directories as needed)
+try {
+  await fsExtra.outputFile(outputFile, buffer);
+  console.log(`✅ Saved ${url} → ${outputFile}`);
+} catch (err) {
+  console.error(`❌ Failed to write file: ${err.message}`);
+  process.exit(1);
 }
-
-// Execute the download
-fetchToFile(urlString, outputPath, maxRedirects)
-  .then(() => console.log(`✅ Saved ${urlString} → ${outputPath}`))
-  .catch(err => {
-    console.error(`❌ Error: ${err.message}`);
-    process.exit(1);
-  });
