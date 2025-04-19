@@ -1,5 +1,7 @@
 # ignore search results directory
 search-bing/
+search-youtube/
+search-github/
 download/
 register-email/
 check-mail/
