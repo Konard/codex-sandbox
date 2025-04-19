@@ -11,6 +11,9 @@ const { use } = eval(useJs);
 const tapeMod = await use('tape@5');
 const tape = tapeMod.default;
 
+// Added placeholder for API key
+const API_KEY = 'YOUR_YOUTUBE_API_KEY'; // Replace with a valid API key
+
 tape('search-youtube basic functionality', async t => {
   const fsExtra = await use('fs-extra@11');
   // Clean previous outputs
@@ -18,7 +21,7 @@ tape('search-youtube basic functionality', async t => {
 
   // Run the skill with a known query
   const query = 'test';
-  const res = spawnSync('node', ['skills/search-youtube.mjs', query], { encoding: 'utf8' });
+  const res = spawnSync('node', ['skills/search-youtube.mjs', query, API_KEY], { encoding: 'utf8' });
   t.equal(res.status, 0, 'search-youtube exited with code 0');
 
   // Verify output file exists

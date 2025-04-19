@@ -17,6 +17,56 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fetch from 'node-fetch';
+
+/**
+ * Searches YouTube using the YouTube Data API.
+ * @param {string} query - The search query term.
+ * @param {string} apiKey - Your YouTube Data API key.
+ * @param {number} [maxResults=5] - The maximum number of results to return.
+ * @returns {Promise<Object>} - The search results from YouTube.
+ */
+export async function searchYouTubeViaAPI(query, apiKey, maxResults = 5) {
+  const endpoint = 'https://www.googleapis.com/youtube/v3/search';
+  const params = new URLSearchParams({
+    part: 'snippet',
+    q: query,
+    type: 'video',
+    maxResults: maxResults.toString(),
+    key: apiKey,
+  });
+
+  const response = await fetch(`${endpoint}?${params.toString()}`);
+
+  if (!response.ok) {
+    throw new Error(`YouTube API request failed: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Converts YouTube API search results to Markdown format.
+ * @param {Object} apiResults - The results from the YouTube API.
+ * @param {string} query - The search query term.
+ * @returns {string} - The Markdown content.
+ */
+function convertResultsToMarkdown(apiResults, query) {
+  let markdown = `# YouTube search results for "${query}"
+\n`;
+
+  if (apiResults.items && apiResults.items.length > 0) {
+    for (const item of apiResults.items) {
+      const title = item.snippet.title;
+      const url = `https://www.youtube.com/watch?v=${item.id.videoId}`;
+      markdown += `- [${title}](${url})\n\n`;
+    }
+  } else {
+    markdown += "No results found.\n";
+  }
+
+  return markdown;
+}
 
 /**
  * Perform a YouTube search and write the results to a Markdown file.
@@ -27,7 +77,7 @@ import { fileURLToPath } from 'url';
  *                                      `search-youtube/<slug>.md`.
  * @returns {Promise<{results: Array, outputFile: string}>}
  */
-export async function searchYouTube(query, outPath) {
+export async function searchYouTubeViaHTML(query, outPath) {
   if (!query || typeof query !== 'string') {
     throw new TypeError('query must be a non‑empty string');
   }
@@ -54,6 +104,8 @@ export async function searchYouTube(query, outPath) {
 
   // Fetch YouTube search results page
   const ytUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+  console.log('Fetching YouTube search results from:', ytUrl);
+
   let html;
   try {
     const res = await fetchFn(ytUrl, {
@@ -61,7 +113,14 @@ export async function searchYouTube(query, outPath) {
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     html = await res.text();
+    console.log('Fetched HTML length:', html.length);
+
+    // Save fetched HTML to a file for debugging
+    const debugHtmlPath = `${defaultDir}/debug.html`;
+    await fs.writeFile(debugHtmlPath, html, 'utf8');
+    console.log(`Saved fetched HTML to ${debugHtmlPath}`);
   } catch (err) {
+    console.error('Error fetching YouTube results:', err.message);
     throw new Error(`Failed to fetch results: ${err.message}`);
   }
 
@@ -78,6 +137,8 @@ export async function searchYouTube(query, outPath) {
     results.push({ title, url });
   });
 
+  console.log('Parsed results:', results);
+
   // Build Markdown content
   let md = `# YouTube search results for "${query}"
 \n`;
@@ -89,6 +150,24 @@ export async function searchYouTube(query, outPath) {
   await fs.writeFile(outputFile, md, 'utf8');
 
   return { results, outputFile };
+}
+
+/**
+ * Perform a YouTube search using the API and convert results to Markdown.
+ *
+ * @param {string} query - The search query term.
+ * @param {string} apiKey - Your YouTube Data API key.
+ * @param {number} [maxResults=5] - The maximum number of results to return.
+ * @returns {Promise<{apiResults: Object, markdown: string}>} - The API results and Markdown content.
+ */
+export async function searchYouTube(query, apiKey, maxResults = 5) {
+  // Fetch API results using the existing function
+  const apiResults = await searchYouTubeViaAPI(query, apiKey, maxResults);
+
+  // Convert results to Markdown
+  const markdown = convertResultsToMarkdown(apiResults, query);
+
+  return { apiResults, markdown };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -107,13 +186,26 @@ if (isCLI) {
   (async () => {
     const args = process.argv.slice(2);
     if (args.length < 1) {
-      console.error('Usage: search-youtube.mjs <query> [outputFile]');
+      console.error('Usage: search-youtube.mjs <query> <apiKey> [outputFile]');
       process.exit(1);
     }
-    const [query, outputPathArg] = args;
+    const [query, apiKey, outputPathArg] = args;
+
+    if (!apiKey) {
+      console.error('❌ Missing API key. Please provide a valid YouTube Data API key.');
+      process.exit(1);
+    }
+
     try {
-      const { results, outputFile } = await searchYouTube(query, outputPathArg);
-      console.log(`✅ Saved ${results.length} results to ${outputFile}`);
+      const { apiResults, markdown } = await searchYouTube(query, apiKey);
+      const outputFile = outputPathArg || `search-youtube/${query.trim().replace(/\s+/g, '-')}.md`;
+
+      // Ensure output directory exists
+      await fs.mkdir(path.dirname(outputFile), { recursive: true });
+
+      // Write Markdown to file
+      await fs.writeFile(outputFile, markdown, 'utf8');
+      console.log(`✅ Saved ${apiResults.items.length} results to ${outputFile}`);
     } catch (err) {
       console.error(`❌ ${err.message}`);
       process.exit(1);
