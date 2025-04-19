@@ -18,6 +18,80 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+/**
+ * Prints detailed information about a failed fetch response.
+ * @param {Response} resp - The fetch Response object.
+ */
+async function printErrorResponse(resp) {
+  console.error(`Fetch Error: ${resp.status} ${resp.statusText}`);
+  try {
+    const bodyText = await resp.clone().text();
+    console.error('Response body:', bodyText);
+  } catch (e) {
+    console.error('Failed to read response body:', e);
+  }
+}
+
+/**
+ * Prints request URL, headers (with auth masked), and JSON payload.
+ * @param {string} url - The request URL.
+ * @param {object} options - The fetch options object.
+ */
+function printRequestDetails(url, options) {
+  const maskedReqHeaders = {};
+  Object.entries(options.headers || {}).forEach(([k, v]) => {
+    maskedReqHeaders[k] = k.toLowerCase() === 'authorization'
+      ? maskAuthHeader(v, 5)
+      : v;
+  });
+  console.log('Request URL:', url);
+  console.log('Request Headers:', maskedReqHeaders);
+  try {
+    console.log('Request Payload:', JSON.parse(options.body));
+  } catch {
+    console.log('Request Payload:', options.body);
+  }
+}
+
+/**
+ * Prints status, headers (with auth masked), and body of a fetch Response.
+ * @param {Response} resp - The fetch Response object.
+ */
+async function printResponseDetails(resp) {
+  console.log(`Response Status: ${resp.status} ${resp.statusText}`);
+  const respHeadersObj = {};
+  resp.headers.forEach((v, k) => {
+    respHeadersObj[k] = k.toLowerCase() === 'authorization'
+      ? maskAuthHeader(v, 5)
+      : v;
+  });
+  console.log('Response Headers:', respHeadersObj);
+  try {
+    const bodyText = await resp.clone().text();
+    console.log('Response Body:', bodyText);
+  } catch (e) {
+    console.error('Failed to read response body:', e);
+  }
+}
+
+/**
+ * Masks sensitive header values by keeping the first and last few characters.
+ * @param {string} value - The header value to mask.
+ * @param {number} keepChars - Number of characters to keep at each end.
+ */
+function maskAuthHeader(value, keepChars = 5) {
+  if (typeof value !== 'string') return value;
+  const bearerPrefix = 'Bearer ';
+  if (value.startsWith(bearerPrefix)) {
+    const token = value.slice(bearerPrefix.length);
+    if (token.length <= keepChars * 2) return value;
+    const maskedToken = token.slice(0, keepChars) + '...' + token.slice(-keepChars);
+    return bearerPrefix + maskedToken;
+  }
+  if (value.length <= keepChars * 2) return value;
+  return value.slice(0, keepChars) + '...' + value.slice(-keepChars);
+}
+
 export async function searchOpenAI(query, outPath) {
   if (!query || typeof query !== 'string') {
     throw new TypeError('query must be a non‑empty string');
@@ -48,7 +122,6 @@ export async function searchOpenAI(query, outPath) {
   const baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
   const defaultModel = process.env.DEFAULT_MODEL || 'gpt-4o-search-preview';
 
-
   // prepare the Chat Completions request
   const body = {
     model: defaultModel,
@@ -71,15 +144,23 @@ export async function searchOpenAI(query, outPath) {
   // call OpenAI API
   let resp, data;
   try {
-    resp = await fetch(`${baseUrl}/chat/completions`, {
+    const url = `${baseUrl}/chat/completions`;
+    const options = {
       method: 'POST',
       headers: {
         "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify(body)
-    });
-    if (!resp.ok) throw new Error(`API HTTP ${resp.status}`);
+    };
+    printRequestDetails(url, options);
+    resp = await fetch(url, options);
+    await printResponseDetails(resp);
+    
+    if (!resp.ok) {
+      await printErrorResponse(resp);
+      throw new Error(`API HTTP ${resp.status}`);
+    }
     data = await resp.json();
   } catch (err) {
     throw new Error(`OpenAI request failed: ${err.message}`);
