@@ -45,14 +45,13 @@ export async function searchOpenAI(query, outPath) {
   if (!apiKey) {
     throw new Error('Please set your OPENAI_API_KEY in your environment');
   }
+  const baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
+  const defaultModel = process.env.DEFAULT_MODEL || 'gpt-4o-search-preview';
 
-  // load fetch for Node <18 compatibility
-  const fetchMod = await use('node-fetch@3');
-  const fetchFn = fetchMod.default || fetchMod;
 
   // prepare the Chat Completions request
   const body = {
-    model: "gpt-4o-search-preview",
+    model: defaultModel,
     messages: [
       { role: "system", content: "You are a helpful assistant with web browsing capability." },
       { role: "user",   content: query }
@@ -72,7 +71,7 @@ export async function searchOpenAI(query, outPath) {
   // call OpenAI API
   let resp, data;
   try {
-    resp = await fetchFn("https://api.openai.com/v1/chat/completions", {
+    resp = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         "Authorization": `Bearer ${apiKey}`,
